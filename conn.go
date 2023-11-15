@@ -394,7 +394,65 @@ func (c *Conn) connect() error {
 			return nil
 		}
 
-		c.logger.Printf("failed to connect to %s: %v", c.Server(), err)
+		c.logger.Printf("Failed to connect to %s: %+v", c.Server(), err)
+	}
+}
+
+func (c *Conn) resendZkAuth(reauthReadyChan chan struct{}) {
+	shouldCancel := func() bool {
+		select {
+		case <-c.shouldQuit:
+			return true
+		case <-c.closeChan:
+			return true
+		default:
+			return false
+		}
+	}
+
+	c.credsMu.Lock()
+	defer c.credsMu.Unlock()
+
+	defer close(reauthReadyChan)
+
+	if c.logInfo {
+		c.logger.Printf("re-submitting `%d` credentials after reconnect", len(c.creds))
+	}
+
+	for _, cred := range c.creds {
+		if shouldCancel() {
+			return
+		}
+		resChan, err := c.sendRequest(
+			opSetAuth,
+			&setAuthRequest{Type: 0,
+				Scheme: cred.scheme,
+				Auth:   cred.auth,
+			},
+			&setAuthResponse{},
+			nil)
+
+		if err != nil {
+			c.logger.Printf("call to sendRequest failed during credential resubmit: %s", err)
+			// FIXME(prozlach): lets ignore errors for now
+			continue
+		}
+
+		var res response
+		select {
+		case res = <-resChan:
+		case <-c.closeChan:
+			c.logger.Printf("recv closed, cancel re-submitting credentials")
+			return
+		case <-c.shouldQuit:
+			c.logger.Printf("should quit, cancel re-submitting credentials")
+			return
+		}
+		if res.err != nil {
+			c.logger.Printf("credential re-submit failed: %s", res.err)
+			// FIXME(prozlach): lets ignore errors for now
+			continue
+		}
 	}
 }
 
@@ -672,18 +730,26 @@ func (c *Conn) authenticate() error {
 
 	binary.BigEndian.PutUint32(buf[:4], uint32(n))
 
-	c.conn.SetWriteDeadline(time.Now().Add(c.recvTimeout * 10))
+	if err := c.conn.SetWriteDeadline(time.Now().Add(c.recvTimeout * 10)); err != nil {
+		return err
+	}
 	_, err = c.conn.Write(buf[:n+4])
-	c.conn.SetWriteDeadline(time.Time{})
 	if err != nil {
+		return err
+	}
+	if err := c.conn.SetWriteDeadline(time.Time{}); err != nil {
 		return err
 	}
 
 	// Receive and decode a connect response.
-	c.conn.SetReadDeadline(time.Now().Add(c.recvTimeout * 10))
+	if err := c.conn.SetReadDeadline(time.Now().Add(c.recvTimeout * 10)); err != nil {
+		return err
+	}
 	_, err = io.ReadFull(c.conn, buf[:4])
-	c.conn.SetReadDeadline(time.Time{})
 	if err != nil {
+		return err
+	}
+	if err := c.conn.SetReadDeadline(time.Time{}); err != nil {
 		return err
 	}
 
@@ -747,12 +813,16 @@ func (c *Conn) sendData(req *request) error {
 	c.requests[req.xid] = req
 	c.requestsLock.Unlock()
 
-	c.conn.SetWriteDeadline(time.Now().Add(c.recvTimeout))
+	if err := c.conn.SetWriteDeadline(time.Now().Add(c.recvTimeout)); err != nil {
+		return err
+	}
 	_, err = c.conn.Write(c.buf[:n+4])
-	c.conn.SetWriteDeadline(time.Time{})
 	if err != nil {
 		req.recvChan <- response{-1, err}
 		c.conn.Close()
+		return err
+	}
+	if err := c.conn.SetWriteDeadline(time.Time{}); err != nil {
 		return err
 	}
 
@@ -777,11 +847,15 @@ func (c *Conn) sendLoop() error {
 
 			binary.BigEndian.PutUint32(c.buf[:4], uint32(n))
 
-			c.conn.SetWriteDeadline(time.Now().Add(c.recvTimeout))
+			if err := c.conn.SetWriteDeadline(time.Now().Add(c.recvTimeout)); err != nil {
+				return err
+			}
 			_, err = c.conn.Write(c.buf[:n+4])
-			c.conn.SetWriteDeadline(time.Time{})
 			if err != nil {
 				c.conn.Close()
+				return err
+			}
+			if err := c.conn.SetWriteDeadline(time.Time{}); err != nil {
 				return err
 			}
 		case <-c.closeChan:
@@ -815,8 +889,10 @@ func (c *Conn) recvLoop(conn net.Conn) error {
 		}
 
 		_, err = io.ReadFull(conn, buf[:blen])
-		conn.SetReadDeadline(time.Time{})
 		if err != nil {
+			return err
+		}
+		if err := conn.SetReadDeadline(time.Time{}); err != nil {
 			return err
 		}
 
@@ -839,7 +915,27 @@ func (c *Conn) recvLoop(conn net.Conn) error {
 				Err:   nil,
 			}
 			c.sendEvent(ev)
-			c.notifyWatches(ev)
+			wTypes := make([]watchType, 0, 2)
+			switch res.Type {
+			case EventNodeCreated:
+				wTypes = append(wTypes, watchTypeExist)
+			case EventNodeDeleted, EventNodeDataChanged:
+				wTypes = append(wTypes, watchTypeExist, watchTypeData, watchTypeChild)
+			case EventNodeChildrenChanged:
+				wTypes = append(wTypes, watchTypeChild)
+			}
+			c.watchersLock.Lock()
+			for _, t := range wTypes {
+				wpt := watchPathType{res.Path, t}
+				if watchers, ok := c.watchers[wpt]; ok {
+					for _, ch := range watchers {
+						ch <- ev
+						close(ch)
+					}
+					delete(c.watchers, wpt)
+				}
+			}
+			c.watchersLock.Unlock()
 		} else if res.Xid == -2 {
 			// Ping response. Ignore.
 		} else if res.Xid < 0 {
