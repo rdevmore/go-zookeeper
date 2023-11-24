@@ -7,40 +7,44 @@ import (
 
 const (
 	protocolVersion = 0
-
+	// DefaultPort is the default port listened by server.
 	DefaultPort = 2181
 )
 
 const (
-	opNotify       = 0
-	opCreate       = 1
-	opDelete       = 2
-	opExists       = 3
-	opGetData      = 4
-	opSetData      = 5
-	opGetAcl       = 6
-	opSetAcl       = 7
-	opGetChildren  = 8
-	opSync         = 9
-	opPing         = 11
-	opGetChildren2 = 12
-	opCheck        = 13
-	opMulti        = 14
-	opReconfig     = 16
-	opClose        = -11
-	opSetAuth      = 100
-	opSetWatches   = 101
-	opError        = -1
+	opNotify          = 0
+	opCreate          = 1
+	opDelete          = 2
+	opExists          = 3
+	opGetData         = 4
+	opSetData         = 5
+	opGetAcl          = 6
+	opSetAcl          = 7
+	opGetChildren     = 8
+	opSync            = 9
+	opPing            = 11
+	opGetChildren2    = 12
+	opCheck           = 13
+	opMulti           = 14
+	opReconfig        = 16
+	opCreateContainer = 19
+	opCreateTTL       = 21
+	opClose           = -11
+	opSetAuth         = 100
+	opSetWatches      = 101
+	opError           = -1
 	// Not in protocol, used internally
 	opWatcherEvent = -2
 )
 
 const (
+	// EventNodeCreated represents a node is created.
 	EventNodeCreated         EventType = 1
 	EventNodeDeleted         EventType = 2
 	EventNodeDataChanged     EventType = 3
 	EventNodeChildrenChanged EventType = 4
 
+	// EventSession represents a session event.
 	EventSession     EventType = -1
 	EventNotWatching EventType = -2
 )
@@ -57,6 +61,7 @@ var (
 )
 
 const (
+	// StateUnknown means the session state is unknown.
 	StateUnknown           State = -1
 	StateDisconnected      State = 0
 	StateConnecting        State = 1
@@ -70,8 +75,10 @@ const (
 )
 
 const (
+	// FlagEphemeral means the node is ephemeral.
 	FlagEphemeral = 1
 	FlagSequence  = 2
+	FlagTTL       = 4
 )
 
 var (
@@ -88,8 +95,10 @@ var (
 	}
 )
 
+// State is the session state.
 type State int32
 
+// String converts State to a readable string.
 func (s State) String() string {
 	if name := stateNames[s]; name != "" {
 		return name
@@ -97,9 +106,11 @@ func (s State) String() string {
 	return "unknown state"
 }
 
+// ErrCode is the error code defined by server. Refer to ZK documentations for more specifics.
 type ErrCode int32
 
 var (
+	// ErrConnectionClosed means the connection has been closed.
 	ErrConnectionClosed        = errors.New("zk: connection closed")
 	ErrUnknown                 = errors.New("zk: unknown error")
 	ErrAPIError                = errors.New("zk: api error")
@@ -111,9 +122,10 @@ var (
 	ErrNotEmpty                = errors.New("zk: node has children")
 	ErrSessionExpired          = errors.New("zk: session has been expired by the server")
 	ErrInvalidACL              = errors.New("zk: invalid ACL specified")
+	ErrInvalidFlags            = errors.New("zk: invalid flags specified")
 	ErrAuthFailed              = errors.New("zk: client authentication failed")
 	ErrClosing                 = errors.New("zk: zookeeper is closing")
-	ErrNothing                 = errors.New("zk: no server responsees to process")
+	ErrNothing                 = errors.New("zk: no server responses to process")
 	ErrSessionMoved            = errors.New("zk: session moved to another server, so operation is ignored")
 	ErrReconfigDisabled        = errors.New("attempts to perform a reconfiguration operation when reconfiguration feature is disabled")
 	ErrBadArguments            = errors.New("invalid arguments")
@@ -180,6 +192,7 @@ const (
 
 // Constants for ACL permissions
 const (
+	// PermRead represents the permission needed to read a znode.
 	PermRead = 1 << iota
 	PermWrite
 	PermCreate
@@ -191,29 +204,32 @@ const (
 var (
 	emptyPassword = []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 	opNames       = map[int32]string{
-		opNotify:       "notify",
-		opCreate:       "create",
-		opDelete:       "delete",
-		opExists:       "exists",
-		opGetData:      "getData",
-		opSetData:      "setData",
-		opGetAcl:       "getACL",
-		opSetAcl:       "setACL",
-		opGetChildren:  "getChildren",
-		opSync:         "sync",
-		opPing:         "ping",
-		opGetChildren2: "getChildren2",
-		opCheck:        "check",
-		opMulti:        "multi",
-		opReconfig:     "reconfig",
-		opClose:        "close",
-		opSetAuth:      "setAuth",
-		opSetWatches:   "setWatches",
+		opNotify:          "notify",
+		opCreate:          "create",
+		opCreateContainer: "createContainer",
+		opCreateTTL:       "createTTL",
+		opDelete:          "delete",
+		opExists:          "exists",
+		opGetData:         "getData",
+		opSetData:         "setData",
+		opGetAcl:          "getACL",
+		opSetAcl:          "setACL",
+		opGetChildren:     "getChildren",
+		opSync:            "sync",
+		opPing:            "ping",
+		opGetChildren2:    "getChildren2",
+		opCheck:           "check",
+		opMulti:           "multi",
+		opReconfig:        "reconfig",
+		opClose:           "close",
+		opSetAuth:         "setAuth",
+		opSetWatches:      "setWatches",
 
 		opWatcherEvent: "watcherEvent",
 	}
 )
 
+// EventType represents the event type sent by server.
 type EventType int32
 
 func (t EventType) String() string {

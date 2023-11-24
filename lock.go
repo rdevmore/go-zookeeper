@@ -36,14 +36,24 @@ func NewLock(c *Conn, path string, acl []ACL) *Lock {
 }
 
 func parseSeq(path string) (int, error) {
-	parts := strings.Split(path, "-")
+	parts := strings.Split(path, "lock-")
+	// python client uses a __LOCK__ prefix
+	if len(parts) == 1 {
+		parts = strings.Split(path, "__")
+	}
 	return strconv.Atoi(parts[len(parts)-1])
 }
 
-// Lock attempts to acquire the lock. It will wait to return until the lock
-// is acquired or an error occurs. If this instance already has the lock
-// then ErrDeadlock is returned.
+// Lock attempts to acquire the lock. It works like LockWithData, but it doesn't
+// write any data to the lock node.
 func (l *Lock) Lock() error {
+	return l.LockWithData([]byte{})
+}
+
+// LockWithData attempts to acquire the lock, writing data into the lock node.
+// It will wait to return until the lock is acquired or an error occurs. If
+// this instance already has the lock then ErrDeadlock is returned.
+func (l *Lock) LockWithData(data []byte) error {
 	if l.lockPath != "" {
 		return ErrDeadlock
 	}
@@ -169,9 +179,9 @@ func (l *Lock) Unlock() error {
 	return nil
 }
 
-//Check whether lock got created and response was lost because of network partition failure.
-//It queries zookeeper and scans existing sequential ephemeral znodes under the parent path
-//It finds out that previously requested sequence number corresponds to child having lowest sequence number
+// Check whether lock got created and response was lost because of network partition failure.
+// It queries zookeeper and scans existing sequential ephemeral znodes under the parent path
+// It finds out that previously requested sequence number corresponds to child having lowest sequence number
 func lockExists(c *Conn, rootPath string, znodePath string) bool {
 	seq, err := parseSeq(znodePath)
 	if err != nil {
