@@ -103,7 +103,7 @@ func (s State) String() string {
 	if name := stateNames[s]; name != "" {
 		return name
 	}
-	return "unknown state"
+	return "Unknown"
 }
 
 // ErrCode is the error code defined by server. Refer to ZK documentations for more specifics.

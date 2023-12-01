@@ -85,7 +85,7 @@ func (c *conn) start() {
 
 func (c *conn) writeLoop() {
 	for req := range c.wchan {
-		time.Sleep(time.Until(req.writeAt))
+		time.Sleep(req.writeAt.Sub(time.Now()))
 		var res nErr
 		for len(req.p) > 0 && res.err == nil {
 			writep := req.p

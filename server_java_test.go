@@ -49,6 +49,8 @@ func NewIntegrationTestServer(t *testing.T, configPath string, stdout, stderr io
 	}
 	// password is 'test'
 	superString := `SERVER_JVMFLAGS=-Dzookeeper.DigestAuthenticationProvider.superDigest=super:D/InIHSb7yEEbrWz8b9l71RjZJU=`
+	// enable TTL
+	superString += ` -Dzookeeper.extendedTypesEnabled=true -Dzookeeper.emulate353TTLNodes=true`
 
 	return &server{
 		cmdString: filepath.Join(zkPath, "zkServer.sh"),
@@ -65,8 +67,8 @@ func (srv *server) Start() error {
 	srv.cmd = exec.CommandContext(ctx, srv.cmdString, srv.cmdArgs...)
 	srv.cmd.Stdout = srv.stdout
 	srv.cmd.Stderr = srv.stderr
+	srv.cmd.Env = append(os.Environ(), srv.cmdEnv...)
 
-	srv.cmd.Env = srv.cmdEnv
 	return srv.cmd.Start()
 }
 
